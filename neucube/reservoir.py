@@ -3,7 +3,7 @@ from tqdm import tqdm
 import math
 from .topology import small_world_connectivity
 from .utils import print_summary
-from .training.stdp import STDP
+from .training import STDP
 
 class Reservoir():
   def __init__(self, cube_shape=(10,10,10), inputs=None, coordinates=None, mapping=None, c=1.2, l=1.6, c_in=0.9, l_in=1.2, use_mps=False):
@@ -127,3 +127,9 @@ class Reservoir():
                 ["Device", str(self.device)]]
 
     print_summary(res_info)
+
+  def get_reservoir_connections(self):
+    """
+    Returns the reservoir connections
+    """
+    return self.w_latent

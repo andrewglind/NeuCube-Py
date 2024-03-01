@@ -1,4 +1,4 @@
-from neucube.training.stdp import STDP
+from neucube.training import STDP
 
 class Pipeline():
     """
@@ -65,3 +65,9 @@ class Pipeline():
         self.state_test = state
         pred = self.classifier.predict(state)
         return pred
+
+    def get_reservoir_connections(self):
+        """
+        Returns the reservoir connections
+        """
+        return self.res_model.get_reservoir_connections()

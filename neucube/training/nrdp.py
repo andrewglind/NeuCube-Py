@@ -119,7 +119,7 @@ class NRDP():
         self.n_t1 = n_t
         self.g_t1 = g_t
 
-        pre_updates = torch.zeros(self.n_neurons, self.n_neurons) # don't make pre-synaptic adjustments
+        pre_updates = torch.zeros(self.n_neurons, self.n_neurons)
         pos_updates = ((n_t + a_t) - g_t)*torch.gt(w_latent*spike_latent, 0).int()
 
         return pre_updates, pos_updates

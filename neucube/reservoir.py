@@ -1,12 +1,14 @@
 import torch
 from tqdm import tqdm
 import math
-from .topology import small_world_connectivity
+import matplotlib.pyplot as plt
+import numpy as np
+from .topology import small_world_connectivity, connectivity_matlab
 from .utils import print_summary
 from .training import STDP
 
 class Reservoir():
-  def __init__(self, cube_shape=(10,10,10), inputs=None, coordinates=None, mapping=None, c=1.2, l=1.6, c_in=0.9, l_in=1.2, use_mps=False):
+  def __init__(self, cube_shape=(10,10,10), inputs=None, coordinates=None, mapping=None, c=1.2, l=1.6, c_in=0.9, l_in=1.2, use_mps=False, like_matlab=False):
     """
     Initializes the reservoir object.
 
@@ -22,6 +24,7 @@ class Reservoir():
         c_in (float): Parameter controlling the connectivity of the input neurons.
         l_in (float): Parameter controlling the connectivity of the input neurons.
         use_mps (bool): use Metal Performance Shaders (MPS) for Apple Silicon (if available).
+        like_matlab (bool): Flag to make the reservoir behave more like the MATLAB implementation.
     """
     self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu:0")
     if torch.backends.mps.is_available() and use_mps is True:
@@ -35,8 +38,11 @@ class Reservoir():
       self.n_neurons = coordinates.shape[0]
       pos = coordinates
 
-    dist = torch.cdist(pos, pos)
-    conn_mat = small_world_connectivity(dist, c=c, l=l) / 100
+    if like_matlab:
+      conn_mat = connectivity_matlab(inputs, coordinates, mapping)
+    else:
+      dist = torch.cdist(pos, pos)
+      conn_mat = small_world_connectivity(dist, c=c, l=l) / 100
     inh_n = torch.randint(self.n_neurons, size=(int(self.n_neurons*0.2),))
     conn_mat[:, inh_n] = -conn_mat[:, inh_n]
 
@@ -44,12 +50,15 @@ class Reservoir():
       input_conn = torch.where(torch.rand(self.n_neurons, inputs) > 0.95, torch.ones_like(torch.rand(self.n_neurons, inputs)), torch.zeros(self.n_neurons, inputs)) / 50
     else:
       dist_in = torch.cdist(coordinates, mapping, p=2)
-      input_conn = small_world_connectivity(dist_in, c=c_in, l=l_in) / 50
+      if like_matlab:
+        input_conn = small_world_connectivity(dist_in, c=c_in, l=l_in, like_matlab=like_matlab)
+      else:
+        input_conn = small_world_connectivity(dist_in, c=c_in, l=l_in) / 50
 
     self.w_latent = conn_mat.to(self.device)
     self.w_in = input_conn.to(self.device)
 
-  def simulate(self, X, mem_thr=0.1, refractory_period=5, train=True, learning_rule=STDP(), verbose=True):
+  def simulate(self, X, mem_thr=0.1, refractory_period=5, leak_rate=0.025, train=True, learning_rule=STDP(), verbose=True):
     """
     Simulates the reservoir activity given input data.
 
@@ -57,6 +66,7 @@ class Reservoir():
         X (torch.Tensor): Input data of shape (batch_size, n_time, n_features).
         mem_thr (float): Membrane threshold for spike generation.
         refractory_period (int): Refractory period after a spike.
+        leak_rate (float): Leaky Integrate and Fire (LIF) leak rate
         train (bool): Flag indicating whether to perform online training of the reservoir.
         learning_rule (LearningRule): The learning rule implementation to use for training.
         verbose (bool): Flag indicating whether to display progress during simulation.
@@ -95,7 +105,7 @@ class Reservoir():
         refrac[refrac_count < 1] = 1
 
         I = torch.sum(self.w_in*spike_in, axis=1)+torch.sum(self.w_latent*spike_latent, axis=1)
-        mem_poten = mem_poten*torch.exp(torch.tensor(-(1/40)))*(1-spike_latent)+(refrac*I)
+        mem_poten = mem_poten*torch.exp(torch.tensor(-(leak_rate)))*(1-spike_latent)+(refrac*I)
 
         spike_latent[mem_poten >= mem_thr] = 1
         spike_latent[mem_poten < mem_thr] = 0
@@ -114,8 +124,22 @@ class Reservoir():
         spike_times[mem_poten >= mem_thr] = k
         
         spike_rec[s,k,:] = spike_latent
+        self.output = spike_rec
 
     return spike_rec
+
+  def plot_rasters(self, i):
+    """
+    Creates a raster plot for the given sample.
+
+    Parameters:
+        i(integer): Sample number (indexed from 0)
+    """
+    out = self.output
+    spike_indices = np.transpose(out[i].nonzero())
+    plt.figure(figsize=(10, 6))
+    plt.scatter(spike_indices[0], spike_indices[1], s=0.1, color='black')
+    plt.show()
 
   def summary(self):
     """
